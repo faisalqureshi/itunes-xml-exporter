@@ -33,29 +33,14 @@ def process_m3u(m3u_file, folder, copy):
                     filename = None                    
             else:
                 filename = line[len(m.group()):] + '.mp3'
+        fp.close()
 
-            
-    # l = '#EXTINF:356,Meri Hamjoliyaan   - Atif Aslam'
-    # m = re.match('^#EXTINF:[0-9]{3,4},', l)
-    # s= l[len(m.group()):] + '.mp3'
-
-    # print os.path.join('.',' '.join(s.split()))
-    
-    # with open(m3u_file, 'rU') as fp:
-    #     contents = fp.readlines()
-    #     print contents
-    #     for l in contents:
-    #         print l
-
-        # line = contents[0]
-        # line2 = line.replace('\r','\n')
-        # print line2
         
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Export itunes an playlist to a user specified folder.')
-    parser.add_argument('m3ufile', help='iTunes library file')
-    parser.add_argument('folderpath', help='Export folder name')
-    parser.add_argument('--copy', action='store_true')
+    parser = argparse.ArgumentParser(description='Copy .mp3 files specified in a .m3u playlist file (exported via iTunes playlist export feature) to a specified folder.  This can be used to, for example, copy .mp3 in a folder on an SD card to be used in a car audio system.')
+    parser.add_argument('m3ufile', help='.m3u playlist file exported from iTunes via playlist export feature.')
+    parser.add_argument('folderpath', help='Export folderpath where mp3 files will be copied')
+    parser.add_argument('--copy', action='store_true', help='Specify --copy to perform the actualy copying action.  Otherwise it is just a dry-run.')
     args = parser.parse_args()
     # print args
     
