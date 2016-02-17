@@ -54,6 +54,14 @@ def process_m3u(m3u_file, folder, copy):
         
 def get_track_info(track):
     track_info = {}
+    track_info['Track ID'] = '_'
+    track_info['Name'] = '_'
+    track_info['Artist'] = '_'
+    track_info['Total Time'] = '_'
+    track_info['Location'] = '_'
+    track_info['Year'] = '_'
+    track_info['Album'] = '_'
+    
     i = 0
     while (i < len(track)):
         if track[i].tag == 'key' and track[i].text == 'Track ID':
@@ -74,6 +82,16 @@ def get_track_info(track):
     return track_info
 
 
+
+def get_playlist_name(playlist):
+    i = 0
+    while (i < len(playlist)):
+        if playlist[i].tag == 'key' and playlist[i].text == 'Name':
+            return playlist[i+1].text
+        i += 1
+    return ''
+
+
 def get_playlist_info(playlist):
     playlist_info = {}
     i = 0
@@ -90,10 +108,10 @@ def get_playlist_info(playlist):
     return playlist_info
 
 
-def make_playlist(playlist, track_db):
+def make_playlist(playlist, track_db, rootfolder):
     import urllib2
 
-    playlist_folder = os.path.join('.', playlist['Name'])
+    playlist_folder = os.path.join(rootfolder, playlist['Name'])
     playlist_file = os.path.join(playlist_folder, '%s.m3u' % playlist['Name'])
     create_filepath(playlist_file)
     print 'Writing', playlist_file,
@@ -130,11 +148,16 @@ def make_playlist(playlist, track_db):
     f.close()
 
     
-def process_xml( xml_file ):
+def process_xml(xml_file, root_folder, exclude_playlists):
     import xml.etree.ElementTree as ET
-    tree = ET.parse(xml_file)
-    root = tree.getroot()
-
+    root = None
+    try:
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
+    except:
+        print 'Error: cannot read', xml_file, 'quitting.'
+        return
+        
     tracks = root.findall(".//dict/[key='Tracks']")
     playlists = root.findall(".//dict/[key='Playlists']")
 
@@ -152,25 +175,49 @@ def process_xml( xml_file ):
     print 'Processing playlists',        
     playlist_list = playlists[0].findall("./array/dict/[key='Playlist ID']")
     for playlist in playlist_list:
+        playlist_name = get_playlist_name(playlist)
+        if playlist_excluded(playlist_name, exclude_playlists):
+            print 'Skipping playlist', playlist_name
+            continue        
         playlist_info = get_playlist_info(playlist)
         playlist_db.append(playlist_info)
 
     print '... found', len(playlist_db), 'playlists'
 
     for playlist in playlist_db:
-        make_playlist(playlist, track_db)
-        
+        make_playlist(playlist, track_db, root_folder)
+
+
+def playlist_excluded(playlist, exclude_playlists):
+    if playlist in exclude_playlists:
+        return True
+    return False
+
+    
+def process_exclude_from_file( exclude_file ):
+    lines = []
+    try:
+        with open(exclude_file,'r') as f:
+            for l in f:
+                lines.append(l.strip())
+        return lines
+    except:
+        print 'Warning: cannot open', exclude_file, 'ignoring.'
+        return lines
+
         
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Copy .mp3 files specified in a .m3u playlist file (exported via iTunes playlist export feature) to a specified folder.  This can be used to, for example, copy .mp3 in a folder on an SD card to be used in a car audio system.')
-    parser.add_argument('--xml', action='store_true', help='When specified, the program processes the iTunes xml file.')
-    parser.add_argument('m3ufile', help='.m3u playlist file exported from iTunes via playlist export feature.')
-    parser.add_argument('folderpath', help='Export folderpath where mp3 files will be copied')
-    parser.add_argument('--copy', action='store_true', help='Specify --copy to perform the actualy copying action.  Otherwise it is just a dry-run.')
+    parser = argparse.ArgumentParser(description='Processes an iTunes.xml file and creates stand-alone playlist specific folders, which can be copied over to an SD card and played in car audio systems.')
+    parser.add_argument('xmlfile', help='iTunes.xml file to be processed.')
+    parser.add_argument('--root-folder', default='.', help='Root folder where playlists folders will be generated.')
+    #parser.add_argument('--copy', action='store_true', help='Specify --copy to perform the actualy copying action.  Otherwise it is just a dry-run.')
+    parser.add_argument('--exclude-from', type=str, action='store', help='Specify a file that contains playlist names (one per line) to be excluded during copying.')
     args = parser.parse_args()
-    # print args
+    print args
 
-    if not args.xml: 
-        process_m3u( args.m3ufile, args.folderpath, args.copy )
-    else:
-        process_xml( args.m3ufile )
+    exclude_playlists = []
+    if args.exclude_from:
+        exclude_playlists = process_exclude_from_file( args.exclude_from )
+        print exclude_playlists
+
+    process_xml( args.xmlfile, args.root_folder, exclude_playlists)
