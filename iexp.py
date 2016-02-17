@@ -4,10 +4,26 @@ import os
 import xml.etree.ElementTree as ET
 import shutil
 
+
+def md5(fname):
+    hash = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash.update(chunk)
+    return hash.hexdigest()
+
+
+def create_filepath(filepath):
+    if not os.path.exists(os.path.dirname(filepath)):
+        try:
+            os.makedirs(os.path.dirname(filepath))
+        except OSError as exc: # Guard against race condition
+            if exc.errno != errno.EEXIST:
+                raise
+
 def process_m3u(m3u_file, folder, copy):
 
     p = re.compile('^#EXTINF:[0-9]{3,7},')
-
     with open(m3u_file, 'rU') as fp:
         debug = False
 
@@ -57,6 +73,7 @@ def get_track_info(track):
         i += 1
     return track_info
 
+
 def get_playlist_info(playlist):
     playlist_info = {}
     i = 0
@@ -75,8 +92,10 @@ def get_playlist_info(playlist):
 
 def make_playlist(playlist, track_db):
     import urllib2
-    
-    playlist_file = playlist['Name'] + '.m3u'
+
+    playlist_folder = os.path.join('.', playlist['Name'])
+    playlist_file = os.path.join(playlist_folder, '%s.m3u' % playlist['Name'])
+    create_filepath(playlist_file)
     print 'Writing', playlist_file,
 
     f = open(playlist_file, 'w')
@@ -84,13 +103,33 @@ def make_playlist(playlist, track_db):
     
     for id in playlist['Song IDs']:
         if not id in track_db.keys():
-            print 'Warning: song', id, 'not found in track_db.'
+            print 'Warning: song', id, 'not found in track_db. Skipping.'
             continue
         track = track_db[id]
-        f.write('#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist']))
-        f.write('%s\n' % urllib2.url2pathname(track['Location']).replace('file://',''))
+        old_filepath = urllib2.url2pathname(track['Location']).replace('file://','')
+        if not os.path.isfile(old_filepath):
+            print 'Warning:', old_filepath, 'not found. Skipping.'
+            continue;
+        old_filesize = os.stat(old_filepath).st_size 
+        _, file_extension = os.path.splitext(old_filepath)
+        new_filename = '%s-%s-%s-%s%s' % (track['Year'],track['Album'],track['Artist'],track['Name'], file_extension) 
+        new_filepath = os.path.join(playlist_folder,new_filename)
+
+        if os.path.isfile(new_filepath) and os.stat(new_filepath).st_size == old_filesize:
+            print '\nSkipping', old_filepath, 'already exists'
+            f.write('#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist']))
+            f.write('%s\n' % new_filepath)
+        else:
+            print '\nCopying\n', old_filepath, '\n->\n', os.path.join(playlist_folder,new_filepath)
+            try:
+                shutil.copyfile(old_filepath, new_filepath)
+                f.write('#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist']))
+                f.write('%s\n' % new_filepath)
+            except:
+                print 'Warning: copy failed.'
     f.close()
 
+    
 def process_xml( xml_file ):
     import xml.etree.ElementTree as ET
     tree = ET.parse(xml_file)
