@@ -108,9 +108,11 @@ def get_playlist_info(playlist):
     return playlist_info
 
 
-def make_playlist(playlist, track_db, rootfolder, share_music_files):
+def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dry_run):
     import urllib2
 
+    return
+    
     playlist_folder = os.path.join(rootfolder, playlist['Name'])
     playlist_file = os.path.join(playlist_folder, '%s.m3u' % playlist['Name'])
     create_filepath(playlist_file)
@@ -122,13 +124,13 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files):
     
     for id in playlist['Song IDs']:
         if not id in track_db.keys():
-            print 'Warning: song', id, 'not found in track_db. Skipping.'
+            print '\tWarning: song', id, 'not found in track_db. Skipping.'
             continue
         track = track_db[id]
 
         old_filepath = urllib2.url2pathname(track['Location']).replace('file://','')
         if not os.path.isfile(old_filepath):
-            print 'Warning:', old_filepath, 'not found. Skipping.'
+            print '\tWarning:', old_filepath, 'not found. Skipping.'
             continue;
         old_filesize = os.stat(old_filepath).st_size 
 
@@ -136,20 +138,20 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files):
         new_filename = '%s-%s-%s-%s%s' % (track['Year'],track['Album'],track['Artist'],track['Name'], file_extension) 
         new_filepath = os.path.join(playlist_folder, new_filename)
         
-        if share_music_files:
-            if not 'Copied Location' in track.keys():
-                track['Copied Location'] = new_filepath
-            else:
-                new_filepath = track['Copied Location']
+        # if share_music_files:
+        #     if not 'Copied Location' in track.keys():
+        #         track['Copied Location'] = new_filepath
+        #     else:
+        #         new_filepath = track['Copied Location']
         
         if os.path.isfile(new_filepath) and os.stat(new_filepath).st_size == old_filesize:
-            print '\nSkipping:', new_filepath, 'already exists'
+            print '\tSkipping: "', new_filepath, '" already exists'
         else:
-            print '\nCopying\n', old_filepath, '\n->\n', new_filepath
+            print '\tCopying "', old_filepath, '" to "', new_filepath, '"'
             try:
                 shutil.copyfile(old_filepath.encode('UTF-8'), new_filepath.encode('UTF-8'))
             except OSError as exc:                
-                print 'Warning:', new_filepath, 'copy failed.'
+                print 'Warning: "', new_filepath, '" copy failed.'
                 print exc
                 continue
 
@@ -161,12 +163,13 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files):
     f.close()
 
     
-def process_xml(xml_file, root_folder, exclude_playlists, share_music_files):
+def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, verbose, dry_run, export_playlist_name):
     import xml.etree.ElementTree as ET
     root = None
     try:
         tree = ET.parse(xml_file)
         root = tree.getroot()
+        print 'Success: reading', xml_file
     except:
         print 'Error: cannot read', xml_file, 'quitting.'
         return
@@ -177,30 +180,46 @@ def process_xml(xml_file, root_folder, exclude_playlists, share_music_files):
     track_db = {}
     playlist_db = []
     
-    print 'Processing tracks',
+    print 'Finding tracks',
     track_list = tracks[0].findall("./dict/dict/[key='Track ID']")
     for track in track_list:
         track_info =  get_track_info( track )
         track_db[track_info['Track ID']] = track_info
-
     print '... found', len(track_db), 'tracks'
         
-    print 'Processing playlists',        
+    print 'Finding playlists',
+    if verbose: print ''
+    num_playlists_found = 0
+    num_playlists_skipped = 0
     playlist_list = playlists[0].findall("./array/dict/[key='Playlist ID']")
     for playlist in playlist_list:
+        num_playlists_found += 1
         playlist_name = get_playlist_name(playlist)
+        if verbose: print '\tplaylist found:', playlist_name,
         if playlist_excluded(playlist_name, exclude_playlists):
-            print 'Skipping playlist', playlist_name
-            continue        
-        playlist_info = get_playlist_info(playlist)
-        playlist_db.append(playlist_info)
+            num_playlists_skipped += 1
+            if verbose: print '.. skipped',
+            continue
+        if export_playlist_name == None or export_playlist_name == playlist_name: 
+            playlist_info = get_playlist_info(playlist)
+            playlist_db.append(playlist_info)
+        else:
+            num_playlists_skipped += 1
+            if verbose: print '.. skipped', 
+        if verbose: print ''
+            
+    print '... found', num_playlists_found, 'playlists, skipped', num_playlists_skipped
 
-    print '... found', len(playlist_db), 'playlists'
-
+    if len(playlist_db) <= 0:
+        print 'Nothing to process.'
+        return
+    else:
+        print 'Processing', len(playlist_db), 'playlists'
+    
     for playlist in playlist_db:
-        make_playlist(playlist, track_db, root_folder, share_music_files)
+        make_playlist(playlist, track_db, root_folder, share_music_files, verbose, dry_run)
 
-
+        
 def playlist_excluded(playlist, exclude_playlists):
     if playlist in exclude_playlists:
         return True
@@ -223,9 +242,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Processes an iTunes.xml file and creates stand-alone playlist specific folders, which can be copied over to an SD card and played in car audio systems.')
     parser.add_argument('xmlfile', help='iTunes.xml file to be processed.')
     parser.add_argument('--root-folder', default='.', help='Root folder where playlists folders will be generated.')
-    #parser.add_argument('--copy', action='store_true', help='Specify --copy to perform the actualy copying action.  Otherwise it is just a dry-run.')
+    parser.add_argument('--dry-run', action='store_true', default=False, help='If specified, no changes are made to the destination.')
+    parser.add_argument('--verbose', action='store_true', default=False, help='If specified, programs spits out lots of messages.')
     parser.add_argument('--exclude-from', type=str, action='store', help='Specify a file that contains playlist names (one per line) to be excluded during copying.')
-    parser.add_argument('--donot-share-music-files', action='store_true', default=False, help='If not specified, the music files (mp3, ma4, etc.) will be copied once for each playlist.')
+    parser.add_argument('--share-music-files', action='store_true', default=False, help='If specified, music files that are shared between playlists will be copied only once.')
+    parser.add_argument('--playlist', type=str, action='store', default=None, help='Specify a particular playlist that you want to export.')
     args = parser.parse_args()
     # print args
 
@@ -250,4 +271,4 @@ if __name__ == '__main__':
         exclude_playlists = process_exclude_from_file( args.exclude_from )
     exclude_playlists.extend(itunes_default_playlists)
     
-    process_xml( args.xmlfile, args.root_folder, exclude_playlists, not args.donot_share_music_files)
+    process_xml( args.xmlfile, args.root_folder, exclude_playlists, args.share_music_files, args.verbose, args.dry_run, args.playlist)
