@@ -3,6 +3,7 @@ import re
 import os
 import xml.etree.ElementTree as ET
 import shutil
+import sys
 
 
 def md5(fname):
@@ -82,7 +83,6 @@ def get_track_info(track):
     return track_info
 
 
-
 def get_playlist_name(playlist):
     i = 0
     while (i < len(playlist)):
@@ -111,17 +111,29 @@ def get_playlist_info(playlist):
 def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dry_run):
     import urllib2
 
-    return
+    if verbose: print 'root folder:', rootfolder
     
     playlist_folder = os.path.join(rootfolder, playlist['Name'])
-    playlist_file = os.path.join(playlist_folder, '%s.m3u' % playlist['Name'])
-    create_filepath(playlist_file)
-    print 'Writing', playlist_file,
-
-    f = open(playlist_file, 'wb')
-    s = '#EXTM3U\n'    
-    f.write(s.encode('UTF-8'))
+    if verbose: print 'playlist folder:', playlist['Name']
     
+    playlist_file = os.path.join(playlist_folder, '%s.m3u' % playlist['Name'])
+    if verbose: print 'playlist file:', playlist['Name']
+
+    f = None
+    if not dry_run:
+        print '\nCreating playlist file', playlist_file
+        create_filepath(playlist_file)
+        try:
+            f = open(playlist_file, 'wb')
+        except:
+            print 'Warning: error opening', playlist_file, 'skipping this playlist'
+            return
+        
+        s = '#EXTM3U\n'    
+        f.write(s.encode('UTF-8'))
+    else:
+        print '\nDry run: creating playlist file', playlist_file
+
     for id in playlist['Song IDs']:
         if not id in track_db.keys():
             print '\tWarning: song', id, 'not found in track_db. Skipping.'
@@ -147,31 +159,38 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
         if os.path.isfile(new_filepath) and os.stat(new_filepath).st_size == old_filesize:
             print '\tSkipping: "', new_filepath, '" already exists'
         else:
-            print '\tCopying "', old_filepath, '" to "', new_filepath, '"'
-            try:
-                shutil.copyfile(old_filepath.encode('UTF-8'), new_filepath.encode('UTF-8'))
-            except OSError as exc:                
-                print 'Warning: "', new_filepath, '" copy failed.'
-                print exc
-                continue
+            if not dry_run:
+                print '\tCopying "', old_filepath, '" to "', new_filepath, '"'
+            
+                try:
+                    shutil.copyfile(old_filepath.encode('UTF-8'), new_filepath.encode('UTF-8'))
+                except OSError as exc:                
+                    print 'Warning: "', new_filepath, '" copy failed.'
+                    print exc
+                    continue
+            else:
+                print '\tDry run: copying "', old_filepath, '" to "', new_filepath, '"'
+                    
+        if f:    
+            s = '#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist'])
+            f.write(s.encode('UTF-8'))
+            s = '%s\n' % new_filename
+            f.write(s.encode('UTF-8'))
 
-        s = '#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist'])
-        f.write(s.encode('UTF-8'))
-        s = '%s\n' % new_filename
-        f.write(s.encode('UTF-8'))
-        
-    f.close()
+    if f: f.close()
 
     
 def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, verbose, dry_run, export_playlist_name):
     import xml.etree.ElementTree as ET
     root = None
+    print 'Reading', xml_file,
+    sys.stdout.flush()
     try:
         tree = ET.parse(xml_file)
         root = tree.getroot()
-        print 'Success: reading', xml_file
+        print '... success.'
     except:
-        print 'Error: cannot read', xml_file, 'quitting.'
+        print '... failure.'
         return
         
     tracks = root.findall(".//dict/[key='Tracks']")
@@ -245,7 +264,7 @@ if __name__ == '__main__':
     parser.add_argument('--dry-run', action='store_true', default=False, help='If specified, no changes are made to the destination.')
     parser.add_argument('--verbose', action='store_true', default=False, help='If specified, programs spits out lots of messages.')
     parser.add_argument('--exclude-from', type=str, action='store', help='Specify a file that contains playlist names (one per line) to be excluded during copying.')
-    parser.add_argument('--share-music-files', action='store_true', default=False, help='If specified, music files that are shared between playlists will be copied only once.')
+    parser.add_argument('--share-music-files', action='store_true', default=False, help='If specified, music files that are shared between playlists will be copied only once. Currently NOT SUPPORTED.')
     parser.add_argument('--playlist', type=str, action='store', default=None, help='Specify a particular playlist that you want to export.')
     args = parser.parse_args()
     # print args
