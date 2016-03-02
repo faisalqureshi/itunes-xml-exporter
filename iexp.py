@@ -4,6 +4,63 @@ import os
 import xml.etree.ElementTree as ET
 import shutil
 import sys
+import errno
+
+
+def make_a_nice_filename(old_filepath, track, filename_length):
+    print filename_length
+    
+    old_filename = os.path.basename(old_filepath)
+    _, file_extension = os.path.splitext(old_filepath)
+
+    year = track['Year']
+    album = track['Album']
+    artist = track['Artist']
+    name = track['Name']
+
+    yaan = len(year)+len(album)+len(artist)+len(name)
+    aan = len(album)+len(artist)+len(name)
+    
+    new_filename = ''
+    if len(year) > 0 and yaan < (filename_length-4):
+        new_filename += (year + ' - ')
+    if aan <= (filename_length-4):
+        if len(album) > 0: new_filename += (album + ' - ')
+        if len(artist) > 0: new_filename += (artist + ' - ')
+    else:
+        if len(album) + len(name) < (filename_length-4):
+            new_filename += (album + ' - ')
+        elif len(artist) + len(name) < (filename_length-4):
+            new_filename += (artist + ' - ')
+    if len(name) > 0:
+        new_filename += (name + file_extension)
+    else:
+        new_filename += old_filename
+        
+    if not is_valid_filename(new_filename):
+        new_filename = sanitize_filename(new_filename)
+
+    return new_filename
+
+    
+def is_valid_filename(filename):
+    bad_filenames = ['com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9', 'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9', 'con', 'nul', 'prn']
+    bad_chars = set('/?<>\*,|^:"')
+    if filename in bad_filenames:
+        return False
+    
+    return len(bad_chars & set(filename)) == 0
+
+
+def sanitize_filename(filename):
+    bad_chars = set('/?<>\*,|^:"')
+    r = ''
+    for c in filename:
+        if c in bad_chars:
+            r += '_'
+        else:
+            r += c
+    return r
 
 
 def md5(fname):
@@ -22,6 +79,7 @@ def create_filepath(filepath):
             if exc.errno != errno.EEXIST:
                 raise
 
+            
 def process_m3u(m3u_file, folder, copy):
 
     p = re.compile('^#EXTINF:[0-9]{3,7},')
@@ -108,15 +166,15 @@ def get_playlist_info(playlist):
     return playlist_info
 
 
-def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dry_run):
+def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dry_run, fname_len):
     import urllib2
 
     if verbose: print 'root folder:', rootfolder
     
-    playlist_folder = os.path.join(rootfolder, playlist['Name'])
+    playlist_folder = os.path.join(rootfolder, sanitize_filename(playlist['Name']))
     if verbose: print 'playlist folder:', playlist['Name']
     
-    playlist_file = os.path.join(playlist_folder, '%s.m3u' % playlist['Name'])
+    playlist_file = os.path.join(playlist_folder, '%s.m3u' % sanitize_filename(playlist['Name']))
     if verbose: print 'playlist file:', playlist['Name']
 
     f = None
@@ -145,10 +203,20 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
             print '\tWarning:', old_filepath, 'not found. Skipping.'
             continue;
         old_filesize = os.stat(old_filepath).st_size 
-
+        
         _, file_extension = os.path.splitext(old_filepath)
-        new_filename = '%s-%s-%s-%s%s' % (track['Year'],track['Album'],track['Artist'],track['Name'], file_extension) 
+        new_filename = make_a_nice_filename(old_filepath, track, fname_len)
         new_filepath = os.path.join(playlist_folder, new_filename)
+
+        print 'old filepath', old_filepath
+        # print 'basename', os.path.basename(old_filepath)
+        # print 'split', os.path.split(old_filepath)[0]
+        print 'new filepath', new_filepath
+
+        # print is_valid_filename(new_filepath)
+        # print sanitize_filename(new_filename)
+        
+        exit(0)
         
         # if share_music_files:
         #     if not 'Copied Location' in track.keys():
@@ -180,7 +248,7 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
     if f: f.close()
 
     
-def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, verbose, dry_run, export_playlist_name):
+def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, verbose, dry_run, export_playlist_name, fname_len):
     import xml.etree.ElementTree as ET
     root = None
     print 'Reading', xml_file,
@@ -193,13 +261,11 @@ def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, ver
         print '... failure.'
         return
         
-    tracks = root.findall(".//dict/[key='Tracks']")
-    playlists = root.findall(".//dict/[key='Playlists']")
-
-    track_db = {}
-    playlist_db = []
     
     print 'Finding tracks',
+    sys.stdout.flush()
+    tracks = root.findall(".//dict/[key='Tracks']")
+    track_db = {}    
     track_list = tracks[0].findall("./dict/dict/[key='Track ID']")
     for track in track_list:
         track_info =  get_track_info( track )
@@ -207,6 +273,9 @@ def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, ver
     print '... found', len(track_db), 'tracks'
         
     print 'Finding playlists',
+    sys.stdout.flush()
+    playlists = root.findall(".//dict/[key='Playlists']")
+    playlist_db = []
     if verbose: print ''
     num_playlists_found = 0
     num_playlists_skipped = 0
@@ -236,7 +305,7 @@ def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, ver
         print 'Processing', len(playlist_db), 'playlists'
     
     for playlist in playlist_db:
-        make_playlist(playlist, track_db, root_folder, share_music_files, verbose, dry_run)
+        make_playlist(playlist, track_db, root_folder, share_music_files, verbose, dry_run, fname_len)
 
         
 def playlist_excluded(playlist, exclude_playlists):
@@ -266,6 +335,7 @@ if __name__ == '__main__':
     parser.add_argument('--exclude-from', type=str, action='store', help='Specify a file that contains playlist names (one per line) to be excluded during copying.')
     parser.add_argument('--share-music-files', action='store_true', default=False, help='If specified, music files that are shared between playlists will be copied only once. Currently NOT SUPPORTED.')
     parser.add_argument('--playlist', type=str, action='store', default=None, help='Specify a particular playlist that you want to export.')
+    parser.add_argument('--fname-len', type=int, action='store', default=256, help='Specify the length of music filenames to be created during copying.  The minimum value should be 32.')
     args = parser.parse_args()
     # print args
 
@@ -290,4 +360,4 @@ if __name__ == '__main__':
         exclude_playlists = process_exclude_from_file( args.exclude_from )
     exclude_playlists.extend(itunes_default_playlists)
     
-    process_xml( args.xmlfile, args.root_folder, exclude_playlists, args.share_music_files, args.verbose, args.dry_run, args.playlist)
+    process_xml( args.xmlfile, args.root_folder, exclude_playlists, args.share_music_files, args.verbose, args.dry_run, args.playlist, args.fname_len)
