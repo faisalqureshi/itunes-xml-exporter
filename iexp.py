@@ -174,8 +174,9 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
     playlist_folder = os.path.join(rootfolder, sanitize_filename(playlist['Name']))
     if verbose: print 'playlist folder:', playlist['Name']
     
-    playlist_file = os.path.join(playlist_folder, '%s.m3u' % sanitize_filename(playlist['Name']))
-    if verbose: print 'playlist file:', playlist['Name']
+    playlist_filename = '%s.m3u' % sanitize_filename(playlist['Name'])
+    if verbose: print 'playlist file:', playlist_filename
+    playlist_file = os.path.join(playlist_folder, '%s.m3u' % playlist_filename)
 
     f = None
     if not dry_run:
@@ -208,16 +209,14 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
         new_filename = make_a_nice_filename(old_filepath, track, fname_len)
         new_filepath = os.path.join(playlist_folder, new_filename)
 
-        print 'old filepath', old_filepath
+        # print 'old filepath', old_filepath
         # print 'basename', os.path.basename(old_filepath)
         # print 'split', os.path.split(old_filepath)[0]
-        print 'new filepath', new_filepath
+        # print 'new filepath', new_filepath
 
         # print is_valid_filename(new_filepath)
         # print sanitize_filename(new_filename)
-        
-        exit(0)
-        
+                
         # if share_music_files:
         #     if not 'Copied Location' in track.keys():
         #         track['Copied Location'] = new_filepath
@@ -247,8 +246,20 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
 
     if f: f.close()
 
+
+def save_playlist_list_to_file(playlist_list_export_filename, playlist_db):
+    f = None
+    try:
+        with open(playlist_list_export_filename, 'w') as f:
+            for playlist in playlist_db:
+                print 'playlist:', playlist['Name']
+                f.write('%s\n' % playlist['Name'].encode('utf8'))
+    except:
+        print 'Error export playlists to', playlist_list_export_filename
+    if f: f.close()    
+
     
-def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, verbose, dry_run, export_playlist_name, fname_len):
+def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, verbose, dry_run, export_playlist_name, fname_len, playlist_list_export, include_playlists):
     import xml.etree.ElementTree as ET
     root = None
     print 'Reading', xml_file,
@@ -276,26 +287,38 @@ def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, ver
     sys.stdout.flush()
     playlists = root.findall(".//dict/[key='Playlists']")
     playlist_db = []
-    if verbose: print ''
     num_playlists_found = 0
     num_playlists_skipped = 0
     playlist_list = playlists[0].findall("./array/dict/[key='Playlist ID']")
     for playlist in playlist_list:
         num_playlists_found += 1
         playlist_name = get_playlist_name(playlist)
-        if verbose: print '\tplaylist found:', playlist_name,
-        if playlist_excluded(playlist_name, exclude_playlists):
+        if verbose: print '\nplaylist found:', playlist_name,
+        if playlist_in_the_list(playlist_name, exclude_playlists):
             num_playlists_skipped += 1
             if verbose: print '.. skipped',
             continue
-        if export_playlist_name == None or export_playlist_name == playlist_name: 
-            playlist_info = get_playlist_info(playlist)
-            playlist_db.append(playlist_info)
-        else:
-            num_playlists_skipped += 1
-            if verbose: print '.. skipped', 
-        if verbose: print ''
-            
+        # Option 1: users wants a single playlist to be exported
+        if export_playlist_name != None:
+            if export_playlist_name == playlist_name: 
+                playlist_info = get_playlist_info(playlist)
+                playlist_db.append(playlist_info)
+            else:
+                num_playlists_skipped += 1
+                if verbose: print '.. skipped',
+            continue
+        # Option 2: user has provided an include-from file
+        if len(include_playlists) > 0:
+            if not playlist_in_the_list(playlist_name, include_playlists):
+                num_playlists_skipped += 1
+                if verbose: print '.. skipped',
+                continue
+        # Option 3: user wants to incude every playlist found (that is not excluded)
+        playlist_info = get_playlist_info(playlist)
+        playlist_db.append(playlist_info)
+        print '.. added',
+    if verbose: print ''
+        
     print '... found', num_playlists_found, 'playlists, skipped', num_playlists_skipped
 
     if len(playlist_db) <= 0:
@@ -303,39 +326,85 @@ def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, ver
         return
     else:
         print 'Processing', len(playlist_db), 'playlists'
-    
+        
+    if playlist_list_export != None:
+        return save_playlist_list_to_file(playlist_list_export, playlist_db)
+        
     for playlist in playlist_db:
         make_playlist(playlist, track_db, root_folder, share_music_files, verbose, dry_run, fname_len)
 
         
-def playlist_excluded(playlist, exclude_playlists):
-    if playlist in exclude_playlists:
+def playlist_in_the_list(playlist, playlist_list):
+    if playlist in playlist_list:
         return True
     return False
 
-    
-def process_exclude_from_file( exclude_file ):
+
+def validate_commandline_args(args):
+    if args.share_music_files:
+        print 'Error parsing command line arguments'
+        print '--share-music-file not supported.'
+        exit(0)
+
+    if args.playlist and args.playlist_list_export != None:
+        print 'Error parsing command line arguments'
+        print '--playlist and --playlist-list-export cannot be used together'
+        exit(0)
+
+    if args.include_from and args.playlist_list_export != None:
+        print 'Error parsing command line arguments'
+        print '--include-from and --playlist-list-export cannot be used together'
+        exit(0)
+        
+
+def process_exclude_from_file(exclude_file, verbose):
+    print 'Processing exclude-from file', exclude_file, '...',
+    if verbose: print ' '
     lines = []
     try:
         with open(exclude_file,'r') as f:
             for l in f:
-                lines.append(l.strip())
+                s = l.decode('utf8').strip()
+                if verbose: print '\tExcluding: ', s
+                lines.append(s)
+        print 'excluding', len(lines), 'playlists'
         return lines
     except:
-        print 'Warning: cannot open', exclude_file, 'ignoring.'
+        print '\tWarning: cannot open', exclude_file, 'ignoring.'
+        print 'done'
         return lines
 
-        
+    
+def process_include_from_file(include_file, verbose):
+    print 'Processing include-from file', include_file, '...',
+    if verbose: print ' '
+    lines = []
+    try:
+        with open(include_file,'r') as f:
+            for l in f:
+                s = l.decode('utf8').strip()
+                if verbose: print '\tIncluding: ', s
+                lines.append(s)
+        print 'including', len(lines), 'playlists'
+        return lines
+    except:
+        print 'Warning: cannot open', include_file, 'ignoring.'
+        print 'done'
+        return lines
+
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Processes an iTunes.xml file and creates stand-alone playlist specific folders, which can be copied over to an SD card and played in car audio systems.')
     parser.add_argument('xmlfile', help='iTunes.xml file to be processed.')
     parser.add_argument('--root-folder', default='.', help='Root folder where playlists folders will be generated.')
     parser.add_argument('--dry-run', action='store_true', default=False, help='If specified, no changes are made to the destination.')
     parser.add_argument('--verbose', action='store_true', default=False, help='If specified, programs spits out lots of messages.')
-    parser.add_argument('--exclude-from', type=str, action='store', help='Specify a file that contains playlist names (one per line) to be excluded during copying.')
+    parser.add_argument('--exclude-from', type=str, action='store', default=None, help='Specify a file that contains playlist names (one per line) to be excluded during copying.')
+    parser.add_argument('--include-from', type=str, action='store', default=None, help='Specify a file that contains playlist names (one per line) to be included during copying.')
     parser.add_argument('--share-music-files', action='store_true', default=False, help='If specified, music files that are shared between playlists will be copied only once. Currently NOT SUPPORTED.')
     parser.add_argument('--playlist', type=str, action='store', default=None, help='Specify a particular playlist that you want to export.')
     parser.add_argument('--fname-len', type=int, action='store', default=256, help='Specify the length of music filenames to be created during copying.  The minimum value should be 32.')
+    parser.add_argument('--playlist-list-export', type=str, action='store', default=None, help='If specified, export playlist names.')
     args = parser.parse_args()
     # print args
 
@@ -357,7 +426,22 @@ if __name__ == '__main__':
     
     exclude_playlists = []
     if args.exclude_from:
-        exclude_playlists = process_exclude_from_file( args.exclude_from )
+        exclude_playlists = process_exclude_from_file(args.exclude_from, args.verbose)
     exclude_playlists.extend(itunes_default_playlists)
+
+    include_playlists = []
+    if args.include_from:
+        include_playlists = process_include_from_file(args.include_from, args.verbose)
     
-    process_xml( args.xmlfile, args.root_folder, exclude_playlists, args.share_music_files, args.verbose, args.dry_run, args.playlist, args.fname_len)
+    validate_commandline_args(args)
+    
+    process_xml(args.xmlfile,
+                args.root_folder,
+                exclude_playlists,
+                args.share_music_files,
+                args.verbose,
+                args.dry_run,
+                args.playlist,
+                args.fname_len,
+                args.playlist_list_export,
+                include_playlists)
