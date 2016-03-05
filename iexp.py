@@ -202,12 +202,9 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
         
         _, file_extension = os.path.splitext(old_filepath)
         new_filename = make_a_nice_filename(old_filepath, track, fname_len)
-        print 'AAA', new_filename        
         new_filepath = os.path.join(playlist_folder, new_filename.decode('utf-8'))
-        #new_filepath = os.path.join('.', new_filename)
-        print 'BBB', new_filepath
         
-        if os.path.isfile(new_filepath) and os.stat(new_filepath.decode('utf-8')).st_size == old_filesize:
+        if os.path.isfile(new_filepath) and os.stat(new_filepath).st_size == old_filesize:
             print '\tSkipping:', new_filepath, 'already exists'
         else:
             if dry_run:
@@ -215,7 +212,6 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
             else:
                 print '\tCopying', old_filepath, ' to ', new_filepath
                 try:
-                    print 'ZZZ'
                     shutil.copyfile(old_filepath.decode('utf-8'), new_filepath)
                 except:                
                     print '\tWarning: ', new_filepath, ' copy failed.'
@@ -223,9 +219,8 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
                     
         if f:
             try:
-                s = '#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist'])
+                s = u'#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist'])
                 f.write(s.encode('UTF-8'))
-                print 'QQQ'
                 s = '%s\n' % new_filename.decode('utf-8')
                 f.write(s.encode('utf-8'))
             except:
