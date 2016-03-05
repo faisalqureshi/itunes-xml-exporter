@@ -8,15 +8,15 @@ import errno
 
 
 def make_a_nice_filename(old_filepath, track, filename_length):
-    print filename_length
+    # print filename_length
     
     old_filename = os.path.basename(old_filepath)
     _, file_extension = os.path.splitext(old_filepath)
 
-    year = track['Year']
-    album = track['Album']
-    artist = track['Artist']
-    name = track['Name']
+    year = track['Year'].encode('utf-8')
+    album = track['Album'].encode('utf-8')
+    artist = track['Artist'].encode('utf-8')
+    name = track['Name'].encode('utf-8')
 
     yaan = len(year)+len(album)+len(artist)+len(name)
     aan = len(album)+len(artist)+len(name)
@@ -37,10 +37,7 @@ def make_a_nice_filename(old_filepath, track, filename_length):
     else:
         new_filename += old_filename
         
-    if not is_valid_filename(new_filename):
-        new_filename = sanitize_filename(new_filename)
-
-    return new_filename
+    return sanitize_filename(new_filename)
 
     
 def is_valid_filename(filename):
@@ -168,30 +165,28 @@ def get_playlist_info(playlist):
 
 def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dry_run, fname_len):
     import urllib2
-
-    if verbose: print 'root folder:', rootfolder
     
     playlist_folder = os.path.join(rootfolder, sanitize_filename(playlist['Name']))
     if verbose: print 'playlist folder:', playlist['Name']
     
     playlist_filename = '%s.m3u' % sanitize_filename(playlist['Name'])
     if verbose: print 'playlist file:', playlist_filename
-    playlist_file = os.path.join(playlist_folder, '%s.m3u' % playlist_filename)
+    playlist_file = os.path.join(playlist_folder, playlist_filename)
 
     f = None
-    if not dry_run:
-        print '\nCreating playlist file', playlist_file
+    if dry_run:
+        print 'Dry run: creating playlist file', playlist_file
+    else:   
+        if verbose: print 'Creating playlist file', playlist_file
         create_filepath(playlist_file)
         try:
             f = open(playlist_file, 'wb')
+            s = '#EXTM3U\n'    
+            f.write(s.encode('UTF-8'))
         except:
             print 'Warning: error opening', playlist_file, 'skipping this playlist'
+            if f: f.close()
             return
-        
-        s = '#EXTM3U\n'    
-        f.write(s.encode('UTF-8'))
-    else:
-        print '\nDry run: creating playlist file', playlist_file
 
     for id in playlist['Song IDs']:
         if not id in track_db.keys():
@@ -207,42 +202,36 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
         
         _, file_extension = os.path.splitext(old_filepath)
         new_filename = make_a_nice_filename(old_filepath, track, fname_len)
-        new_filepath = os.path.join(playlist_folder, new_filename)
-
-        # print 'old filepath', old_filepath
-        # print 'basename', os.path.basename(old_filepath)
-        # print 'split', os.path.split(old_filepath)[0]
-        # print 'new filepath', new_filepath
-
-        # print is_valid_filename(new_filepath)
-        # print sanitize_filename(new_filename)
-                
-        # if share_music_files:
-        #     if not 'Copied Location' in track.keys():
-        #         track['Copied Location'] = new_filepath
-        #     else:
-        #         new_filepath = track['Copied Location']
+        print 'AAA', new_filename        
+        new_filepath = os.path.join(playlist_folder, new_filename.decode('utf-8'))
+        #new_filepath = os.path.join('.', new_filename)
+        print 'BBB', new_filepath
         
-        if os.path.isfile(new_filepath) and os.stat(new_filepath).st_size == old_filesize:
-            print '\tSkipping: "', new_filepath, '" already exists'
+        if os.path.isfile(new_filepath) and os.stat(new_filepath.decode('utf-8')).st_size == old_filesize:
+            print '\tSkipping:', new_filepath, 'already exists'
         else:
-            if not dry_run:
-                print '\tCopying "', old_filepath, '" to "', new_filepath, '"'
-            
-                try:
-                    shutil.copyfile(old_filepath.encode('UTF-8'), new_filepath.encode('UTF-8'))
-                except OSError as exc:                
-                    print 'Warning: "', new_filepath, '" copy failed.'
-                    print exc
-                    continue
+            if dry_run:
+                print '\tDry run: copying', old_filepath, ' to ', new_filepath
             else:
-                print '\tDry run: copying "', old_filepath, '" to "', new_filepath, '"'
+                print '\tCopying', old_filepath, ' to ', new_filepath
+                try:
+                    print 'ZZZ'
+                    shutil.copyfile(old_filepath.decode('utf-8'), new_filepath)
+                except:                
+                    print '\tWarning: ', new_filepath, ' copy failed.'
+                    continue
                     
-        if f:    
-            s = '#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist'])
-            f.write(s.encode('UTF-8'))
-            s = '%s\n' % new_filename
-            f.write(s.encode('UTF-8'))
+        if f:
+            try:
+                s = '#EXTINF:%d,%s - %s\n' % (int(track['Total Time'])/1000, track['Name'], track['Artist'])
+                f.write(s.encode('UTF-8'))
+                print 'QQQ'
+                s = '%s\n' % new_filename.decode('utf-8')
+                f.write(s.encode('utf-8'))
+            except:
+                print '\tWarning: error writing to playlist file, skipping this playlist'
+                if f: f.close()
+                return
 
     if f: f.close()
 
@@ -329,7 +318,9 @@ def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, ver
         
     if playlist_list_export != None:
         return save_playlist_list_to_file(playlist_list_export, playlist_db)
-        
+
+    print 'Creating playlists'
+    if verbose: print 'root folder:', root_folder
     for playlist in playlist_db:
         make_playlist(playlist, track_db, root_folder, share_music_files, verbose, dry_run, fname_len)
 
