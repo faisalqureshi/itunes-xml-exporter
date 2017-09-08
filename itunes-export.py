@@ -7,6 +7,34 @@ import sys
 import errno
 
 
+def make_a_nicer_filename(old_filepath, track, filename_length):
+    # print filename_length
+    
+    old_filename = os.path.basename(old_filepath)
+    _, file_extension = os.path.splitext(old_filepath)
+
+    year = track['Year'].encode('utf-8')
+    album = track['Album'].encode('utf-8')
+    artist = track['Artist'].encode('utf-8')
+    name = track['Name'].encode('utf-8')
+
+    new_filename = ''
+    if len(name) > 0:
+        new_filename = name
+    if len(artist) > 0 and len(artist)+len(new_filename)+4 < filename_length:
+        new_filename += (' - ' + artist)
+    if len(album) > 0 and len(album)+len(new_filename)+4 < filename_length:
+        new_filename += (' - ' + album)
+    if len(year) > 0 and len(year)+len(new_filename)+4 < filename_length:
+        new_filename += (' - ' + year)
+
+    if len(new_filename) > 0:
+        new_filename += file_extension
+    else:
+        new_filename = old_filename
+        
+    return sanitize_filename(new_filename)
+
 def make_a_nice_filename(old_filepath, track, filename_length):
     # print filename_length
     
@@ -163,7 +191,7 @@ def get_playlist_info(playlist):
     return playlist_info
 
 
-def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dry_run, fname_len):
+def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dry_run, fname_len, nicer_names):
     import urllib2
     
     playlist_folder = os.path.join(rootfolder, sanitize_filename(playlist['Name']))
@@ -201,7 +229,10 @@ def make_playlist(playlist, track_db, rootfolder, share_music_files, verbose, dr
         old_filesize = os.stat(old_filepath).st_size 
         
         _, file_extension = os.path.splitext(old_filepath)
-        new_filename = make_a_nice_filename(old_filepath, track, fname_len)
+        if nicer_names:
+            new_filename = make_a_nicer_filename(old_filepath, track, fname_len)
+        else:
+            new_filename = make_a_nice_filename(old_filepath, track, fname_len)
         new_filepath = os.path.join(playlist_folder, new_filename.decode('utf-8'))
         
         if os.path.isfile(new_filepath) and os.stat(new_filepath).st_size == old_filesize:
@@ -243,7 +274,7 @@ def save_playlist_list_to_file(playlist_list_export_filename, playlist_db):
     if f: f.close()    
 
     
-def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, verbose, dry_run, export_playlist_name, fname_len, playlist_list_export, include_playlists):
+def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, verbose, dry_run, export_playlist_name, fname_len, playlist_list_export, include_playlists, nicer_names):
     import xml.etree.ElementTree as ET
     root = None
     print 'Reading', xml_file,
@@ -317,7 +348,7 @@ def process_xml(xml_file, root_folder, exclude_playlists, share_music_files, ver
     print 'Creating playlists'
     if verbose: print 'root folder:', root_folder
     for playlist in playlist_db:
-        make_playlist(playlist, track_db, root_folder, share_music_files, verbose, dry_run, fname_len)
+        make_playlist(playlist, track_db, root_folder, share_music_files, verbose, dry_run, fname_len, nicer_names)
 
         
 def playlist_in_the_list(playlist, playlist_list):
@@ -391,6 +422,7 @@ if __name__ == '__main__':
     parser.add_argument('--playlist', type=str, action='store', default=None, help='Specify a particular playlist that you want to export.')
     parser.add_argument('--fname-len', type=int, action='store', default=256, help='Specify the length of music filenames to be created during copying.  The minimum value should be 32.')
     parser.add_argument('--playlist-list-export', type=str, action='store', default=None, help='If specified, export playlist names.')
+    parser.add_argument('--legacy-names', action='store_true', default=False, help='If specified, uses old style names that begin with year.  See make_a_nice_name(). Default is fault.')
     args = parser.parse_args()
     # print args
 
@@ -430,4 +462,5 @@ if __name__ == '__main__':
                 args.playlist,
                 args.fname_len,
                 args.playlist_list_export,
-                include_playlists)
+                include_playlists,
+                not args.legacy_names)
